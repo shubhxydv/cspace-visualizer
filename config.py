@@ -2,22 +2,19 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterable, Tuple
+from typing import Tuple
 
-# Physical robot defaults
+import numpy as np
+
 L1 = 1.0
 L2 = 0.8
 BASE = (0.0, 0.0)
-
-# C-space and planner defaults
 GRID_N = 360
 CONNECTIVITY = 8
 MAX_STEPS = 5 * GRID_N
 ZETA = 1.0
 ETA = 2000.0
 RHO0 = 25
-
-# Geometry and plotting
 WORKSPACE_LIMIT = L1 + L2 + 0.3
 COLORS = {
     "free": "white",
@@ -33,7 +30,7 @@ EPS = 1e-9
 
 
 def normalize_angle_deg(angle_deg: float) -> float:
-    """Wrap angle degrees into [0, 360)."""
+    """Convert any degree input into the canonical interval [0, 360)."""
     value = float(angle_deg) % 360.0
     if math.isclose(value, 360.0, abs_tol=1e-12):
         return 0.0
@@ -47,8 +44,7 @@ def wrap_360(angle_deg: float) -> float:
 def angle_to_index(angle_deg: float, n: int = GRID_N) -> int:
     if n <= 0:
         raise ValueError("n must be positive")
-    deg = normalize_angle_deg(angle_deg)
-    return int(round(deg * n / 360.0)) % n
+    return int(round(normalize_angle_deg(angle_deg) * n / 360.0)) % n
 
 
 def index_to_angle(index: int, n: int = GRID_N) -> float:
@@ -84,7 +80,6 @@ class Arm:
     L2: float = L2
 
     def fk_scalar(self, theta1_deg: float, theta2_deg: float):
-        """Return elbow and tip positions for one arm configuration."""
         t1 = math.radians(normalize_angle_deg(theta1_deg))
         t2 = math.radians(normalize_angle_deg(theta2_deg))
         elbow = (
@@ -98,7 +93,6 @@ class Arm:
         return elbow, tip
 
     def fk_vectorized(self, theta1_deg, theta2_deg):
-        """Vectorized FK for array-like angle inputs."""
         theta1 = np.asarray(theta1_deg, dtype=float)
         theta2 = np.asarray(theta2_deg, dtype=float)
         t1 = np.deg2rad(np.mod(theta1, 360.0))
@@ -113,7 +107,3 @@ class Arm:
 
 
 ARM_DEFAULT = Arm()
-
-
-# import lazily to avoid cycles
-import numpy as np

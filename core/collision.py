@@ -1,56 +1,73 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
-from config import EPS
+from config import BASE, L1, L2
+from core.obstacles import Circle, Rectangle, segment_circle_intersects, segment_rect_intersects
 
 
-def segment_circle_intersects(a, b, c, r):
-    """Distance from centre c to segment ab is <= r, with zero-length support."""
-    ax, ay = a
-    bx, by = b
-    cx, cy = c
-    dx = bx - ax
-    dy = by - ay
-    if abs(dx) <= EPS and abs(dy) <= EPS:
-        return np.hypot(cx - ax, cy - ay) <= r + EPS
-    t = ((cx - ax) * dx + (cy - ay) * dy) / (dx * dx + dy * dy)
-    t = min(1.0, max(0.0, t))
-    qx = ax + t * dx
-    qy = ay + t * dy
-    return np.hypot(cx - qx, cy - qy) <= r + EPS
+@dataclass(frozen=True)
+class Arm:
+    base: tuple[float, float] = BASE
+    L1: float = L1
+    L2: float = L2
+
+    def fk_scalar(self, theta1_deg: float, theta2_deg: float):
+        t1 = np.deg2rad(theta1_deg)
+        t2 = np.deg2rad(theta2_deg)
+        elbow = (self.base[0] + self.L1 * np.cos(t1), self.base[1] + self.L1 * np.sin(t1))
+        tip = (
+            elbow[0] + self.L2 * np.cos(t1 + t2),
+            elbow[1] + self.L2 * np.sin(t1 + t2),
+        )
+        return elbow, tip
+
+    def fk_vectorized(self, theta1_deg, theta2_deg):
+        theta1 = np.asarray(theta1_deg, dtype=float)
+        theta2 = np.asarray(theta2_deg, dtype=float)
+        t1 = np.deg2rad(theta1)
+        t2 = np.deg2rad(theta2)
+        elbow_x = self.base[0] + self.L1 * np.cos(t1)
+        elbow_y = self.base[1] + self.L1 * np.sin(t1)
+        tip_x = elbow_x + self.L2 * np.cos(t1 + t2)
+        tip_y = elbow_y + self.L2 * np.sin(t1 + t2)
+        elbow = np.stack([elbow_x, elbow_y], axis=-1)
+        tip = np.stack([tip_x, tip_y], axis=-1)
+        return elbow, tip
 
 
-def _orientation(a, b, c):
-    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-
-
-def _on_segment(a, b, c):
-    return (
-        min(a[0], b[0]) - EPS <= c[0] <= max(a[0], b[0]) + EPS
-        and min(a[1], b[1]) - EPS <= c[1] <= max(a[1], b[1]) + EPS
+def arm_collides(theta1_deg, theta2_deg, arm=None, obstacles=None):
+    if obstacles is None:
+        obstacles = []
+    if arm is None:
+        arm = Arm()
+    t1 = np.deg2rad(theta1_deg)
+    elbow = (arm.base[0] + arm.L1 * np.cos(t1), arm.base[1] + arm.L1 * np.sin(t1))
+    tip = (
+        elbow[0] + arm.L2 * np.cos(t1 + np.deg2rad(theta2_deg)),
+        elbow[1] + arm.L2 * np.sin(t1 + np.deg2rad(theta2_deg)),
     )
+    for obs in obstacles:
+        for seg_a, seg_b in [((arm.base[0], arm.base[1]), elbow), (elbow, tip)]:
+            if isinstance(obs, Circle):
+                if segment_circle_intersects(seg_a, seg_b, (obs.cx, obs.cy), obs.r):
+                    return True
+            elif isinstance(obs, Rectangle):
+                if segment_rect_intersects(seg_a, seg_b, obs):
+                    return True
+    return False
 
 
-def segment_segment_intersects(a, b, c, d):
-    """Return True if segments ab and cd intersect or are collinear and overlapping."""
-    o1 = _orientation(a, b, c)
-    o2 = _orientation(a, b, d)
-    o3 = _orientation(c, d, a)
-    o4 = _orientation(c, d, b)
-    if abs(o1) <= EPS and abs(o2) <= EPS and abs(o3) <= EPS and abs(o4) <= EPS:
-        return _on_segment(a, b, c) or _on_segment(a, b, d) or _on_segment(c, d, a) or _on_segment(c, d, b)
-    return (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0)
-
-
-def segment_rect_intersects(a, b, rect):
-    """Return True if segment ab intersects rectangle edges or endpoints fall inside."""
-    if rect.contains(a) or rect.contains(b):
-        return True
-    edges = [
-        ((rect.x_min, rect.y_min), (rect.x_max, rect.y_min)),
-        ((rect.x_max, rect.y_min), (rect.x_max, rect.y_max)),
-        ((rect.x_max, rect.y_max), (rect.x_min, rect.y_max)),
-        ((rect.x_min, rect.y_max), (rect.x_min, rect.y_min)),
-    ]
-    return any(segment_segment_intersects(a, b, e1, e2) for e1, e2 in edges)
+def collides_vectorized(theta1_deg, theta2_deg, arm=None, obstacles=None):
+    if obstacles is None:
+        obstacles = []
+    if arm is None:
+        arm = Arm()
+    theta1 = np.asarray(theta1_deg, dtype=float)
+    theta2 = np.asarray(theta2_deg, dtype=float)
+    out = np.zeros_like(theta1, dtype=bool)
+    for i in range(theta1.size):
+        out.flat[i] = arm_collides(theta1.flat[i], theta2.flat[i], arm, obstacles)
+    return out
