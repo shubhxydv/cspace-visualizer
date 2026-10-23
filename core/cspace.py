@@ -2,26 +2,28 @@ from __future__ import annotations
 
 import numpy as np
 
-from config import BASE, L1, L2, GRID_N
+from config import BASE, L1, L2, GRID_N, normalize_angle_deg
 from core.arm import Arm
+from core.collision import collides_vectorized
 
 
 class CSpace:
-    """Simple C-space object with helpers used by the planner and UI layers."""
+    """Configuration-space occupancy grid and torus-aware helper methods."""
 
     def __init__(self, N: int = GRID_N, arm=None, obstacles=None):
         self.N = int(N)
+        if self.N <= 0:
+            raise ValueError("N must be positive")
         self.deg_per_cell = 360.0 / self.N
-        self.arm = arm or Arm(BASE, L1, L2)
+        self.arm = arm if arm is not None else Arm(BASE, L1, L2)
         self.obstacles = list(obstacles or [])
         theta = np.arange(self.N) * self.deg_per_cell
-        T1, T2 = np.meshgrid(theta, theta, indexing="ij")
-        from core.collision import collides_vectorized
-
-        self.occ = collides_vectorized(T1, T2, self.arm, self.obstacles)
+        t1, t2 = np.meshgrid(theta, theta, indexing="ij")
+        self.occ = collides_vectorized(t1, t2, self.arm, self.obstacles)
 
     def angle_to_index(self, deg: float) -> int:
-        return int(np.rint((float(deg) % 360.0) * self.N / 360.0)) % self.N
+        angle = normalize_angle_deg(deg)
+        return int(np.rint((angle / 360.0) * self.N)) % self.N
 
     def index_to_angle(self, idx: int) -> float:
         return float((int(idx) % self.N) * self.deg_per_cell)
@@ -41,7 +43,11 @@ class CSpace:
         return out
 
 
-def build_cspace(occ):
-    c = CSpace(N=occ.shape[0])
-    c.occ = np.asarray(occ, dtype=bool)
-    return c
+def build_cspace(occ, arm=None, obstacles=None):
+    cspace = CSpace(N=occ.shape[0], arm=arm, obstacles=obstacles)
+    cspace.occ = np.asarray(occ, dtype=bool)
+    return cspace
+
+
+def empty_grid(N: int = GRID_N):
+    return np.zeros((N, N), dtype=bool)
