@@ -8,7 +8,7 @@ from core.collision import collides_vectorized
 
 
 class CSpace:
-    """Configuration-space occupancy grid and torus-aware helper methods."""
+    """Configuration-space occupancy grid and torus-aware helpers."""
 
     def __init__(self, N: int = GRID_N, arm=None, obstacles=None):
         self.N = int(N)
