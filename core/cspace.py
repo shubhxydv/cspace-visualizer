@@ -8,7 +8,7 @@ from core.collision import collides_vectorized
 
 
 class CSpace:
-    """Configuration-space occupancy grid and torus-aware helpers."""
+    """Configuration-space occupancy grid and torus-aware helper methods."""
 
     def __init__(self, N: int = GRID_N, arm=None, obstacles=None):
         self.N = int(N)
@@ -17,6 +17,7 @@ class CSpace:
         self.deg_per_cell = 360.0 / self.N
         self.arm = arm if arm is not None else Arm(BASE, L1, L2)
         self.obstacles = list(obstacles or [])
+
         theta = np.arange(self.N) * self.deg_per_cell
         t1, t2 = np.meshgrid(theta, theta, indexing="ij")
         self.occ = collides_vectorized(t1, t2, self.arm, self.obstacles)
